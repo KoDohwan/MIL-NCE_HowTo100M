@@ -2,6 +2,9 @@ import os
 import random
 import time
 import glob
+from tqdm import tqdm
+from sklearn import preprocessing
+from sklearn.svm import LinearSVC
 
 import numpy as np
 import torch
@@ -21,6 +24,7 @@ from loss import MILNCELoss
 
 from metrics import compute_metrics
 from youcook_loader import Youcook_DataLoader
+from hmdb_loader import HMDB_DataLoader
 from utils import AllGather
 from utils import get_cosine_schedule_with_warmup
 
@@ -38,19 +42,24 @@ def main():
         random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-    if args.world_size == -1 and "SLURM_NPROCS" in os.environ:
-        args.world_size = int(os.environ["SLURM_NPROCS"])
-        args.rank = int(os.environ["SLURM_PROCID"])
-        jobid = os.environ["SLURM_JOBID"]
-        hostfile = "dist_url." + jobid + ".txt"
-        args.dist_url = "file://{}.{}".format(os.path.realpath(args.dist_file), jobid)
-        print(
-            "dist-url:{} at PROCID {} / {}".format(
-                args.dist_url, args.rank, args.world_size
-            )
-        )
-    else:
-        raise NotImplementedError
+    # if args.world_size == -1 and "SLURM_NPROCS" in os.environ:
+    #     args.world_size = int(os.environ["SLURM_NPROCS"])
+    #     args.rank = int(os.environ["SLURM_PROCID"])
+    #     jobid = os.environ["SLURM_JOBID"]
+    #     hostfile = "dist_url." + jobid + ".txt"
+    #     args.dist_url = "file://{}.{}".format(os.path.realpath(args.dist_file), jobid)
+    #     print(
+    #         "dist-url:{} at PROCID {} / {}".format(
+    #             args.dist_url, args.rank, args.world_size
+    #         )
+    #     )
+    # else:
+    #     raise NotImplementedError
+
+    args.world_size = 1
+    args.rank = 0
+    args.multiprocessing_distributed = True
+    args.evaluate = False
  
     args.distributed = args.world_size > 1 or args.multiprocessing_distributed
     ngpus_per_node = torch.cuda.device_count()
@@ -185,7 +194,7 @@ def main_worker(gpu, ngpus_per_node, args):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         if epoch % max(1, total_batch_size // 512) == 0 and args.evaluate:
-            evaluate(test_loader, model, epoch, args, 'YouCook2')
+            evaluate(test_loader, model, epoch, args, 'HMDB')
         # train for one epoch
         train(train_loader, model, criterion, optimizer, scheduler, epoch, train_dataset, args)
         if args.rank == 0:
@@ -239,34 +248,51 @@ def TrainOneBatch(model, opt, scheduler, data, loss_fun, args):
     scheduler.step()
     return loss.item()
 
-def evaluate(test_loader, model, epoch, args, dataset_name):
-    all_txt_embd = []
+def evaluate(train_loader, model, epoch, args, dataset_name):
     all_video_embd = []
-    model.eval()
-    if args.rank == 0:  
-        log('Evaluating on {}'.format(dataset_name), args)
+    labels = []
+    split1 = []
+    split2 = []
+    split3 = []
     with torch.no_grad():
-        for i_batch, data in enumerate(test_loader):
-            text = data['text'].cuda()
+        for i_batch, data in enumerate(tqdm(train_loader)):
+            split1.append(data['split1'])
+            split2.append(data['split2'])
+            split3.append(data['split3'])
+            labels.append(np.array(data['label']))
             video = data['video'].float().cuda()
             video = video / 255.0
             video = video.view(-1, video.shape[2], video.shape[3], video.shape[4], video.shape[5])
-            video_embd, text_embd = model(video, text)
-            video_embd = video_embd.view(text_embd.shape[0], args.num_windows_test, text_embd.shape[1])
-            video_embd = video_embd.mean(dim=1)
-            video_embd = allgather(video_embd, args)
-            text_embd = allgather(text_embd, args)
-            if args.rank == 0:
-                text_embd = text_embd.cpu().numpy()
-                video_embd = video_embd.cpu().numpy()
-                all_txt_embd.append(text_embd)
-                all_video_embd.append(video_embd)
-    model.train()
-    if args.rank == 0:
-        all_txt_embd = np.concatenate(all_txt_embd, axis=0)
-        all_video_embd = np.concatenate(all_video_embd, axis=0)
-        metrics = compute_metrics(np.dot(all_txt_embd, all_video_embd.T))
-        log('Epoch {} results: {}'.format(epoch, metrics), args)
+            video_embd = model(video, None, mode='video', mixed5c=True)
+            video_embd = video_embd.view(len(data['label']), -1, video_embd.shape[1])
+            video_embd  = video_embd.cpu().numpy()
+            all_video_embd.append(video_embd)
+        split1 = torch.cat(split1).cpu().numpy()
+        split2 = torch.cat(split2).cpu().numpy()
+        split3 = torch.cat(split3).cpu().numpy()
+    all_video_embd = np.concatenate(all_video_embd, axis=0)
+    labels = np.concatenate(labels)
+    le = preprocessing.LabelEncoder()
+    labels = le.fit_transform(labels)
+    for reg in [100.0]:
+        c = LinearSVC(C=reg)
+        for split in range(3):
+            if split == 0:
+                s = split1
+            elif split == 1:
+                s = split2
+            else:
+                s = split3
+            X_train, X_test = all_video_embd[np.where(s == 1)[0]].reshape((-1, 1024)), all_video_embd[np.where(s == 2)[0]].reshape((-1, 1024))
+            label_train, label_test = labels[np.where(s == 1)[0]].repeat(args.num_windows_test), labels[np.where(s == 2)[0]]
+            print('Fitting SVM for split {} and C: {}'.format(split + 1, reg))
+            c.fit(X_train, label_train)
+            X_pred = c.decision_function(X_test)
+            X_pred = np.reshape(X_pred, (len(label_test), args.num_windows_test, -1))
+            X_pred = X_pred.sum(axis=1)
+            X_pred = np.argmax(X_pred, axis=1)
+            acc = np.sum(X_pred == label_test) / float(len(X_pred))  
+            print("Top 1 accuracy split {} and C {} : {}".format(split + 1, reg, acc))
 
 def save_checkpoint(state, checkpoint_dir, epoch, n_ckpt=10):
     torch.save(state, os.path.join(checkpoint_dir, "epoch{:0>4d}.pth.tar".format(epoch)))

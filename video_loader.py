@@ -7,6 +7,7 @@ import random
 import ffmpeg
 import time
 import re
+import json
 
 class HT100M_DataLoader(Dataset):
     """HowTo100M Video-Text loader."""
@@ -23,7 +24,7 @@ class HT100M_DataLoader(Dataset):
             crop_only=False,
             center_crop=True,
             benchmark=False,
-            token_to_word_path='data/dict.npy',
+            token_to_word_path='../../../data/project/rw/HowTo100M/data/dict.npy',
             max_words=20,
             num_candidates=1,
             random_left_right_flip=False,
@@ -132,7 +133,8 @@ class HT100M_DataLoader(Dataset):
         return start
 
     def _get_text(self, caption):
-        cap = pd.read_csv(caption)
+        caption_json = open(caption, 'r').read()
+        cap = pd.DataFrame(json.loads(caption_json))
         ind = random.randint(0, len(cap) - 1)
         if self.num_candidates == 1:
             words = self.words_to_ids(cap['text'].values[ind])
@@ -153,6 +155,6 @@ class HT100M_DataLoader(Dataset):
         video_file = self.csv['video_path'][idx]
         video_id = video_file.split('.')[0]
         video_path = os.path.join(self.video_root, video_file)
-        text, start, end = self._get_text(os.path.join(self.caption_root, video_id + '.csv'))
+        text, start, end = self._get_text(os.path.join(self.caption_root, video_id + '.json'))
         video = self._get_video(video_path, start, end)
         return {'video': video, 'text': text}
