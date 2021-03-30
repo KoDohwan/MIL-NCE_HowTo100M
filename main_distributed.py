@@ -17,9 +17,9 @@ import torch.multiprocessing as mp
 import torch.utils.data
 import torch.utils.data.distributed
 
-import s3dg
+from s3dg_2 import S3D
 from args import get_args
-from video_loader import HT100M_DataLoader
+from video_loader_2 import HT100M_DataLoader
 from loss import MILNCELoss
 
 from metrics import compute_metrics
@@ -82,7 +82,7 @@ def main_worker(gpu, ngpus_per_node, args):
             rank=args.rank,
         )
     # create model
-    model = s3dg.S3D(
+    model = S3D(
         args.num_class, space_to_depth=False, word2vec_path=args.word2vec_path, init=args.weight_init,
     )
 
@@ -121,22 +121,22 @@ def main_worker(gpu, ngpus_per_node, args):
         num_candidates=args.num_candidates,
     )
     # Test data loading code
-    test_dataset = Youcook_DataLoader(
-        data=os.path.join(os.path.dirname(__file__), 'csv/validation_youcook.csv'),
-        num_clip=args.num_windows_test,
-        video_root=args.eval_video_root,
-        fps=args.fps,
-        num_frames=args.num_frames,
-        size=args.video_size,
-        crop_only=False,
-        center_crop=True,
-    )
+    # test_dataset = Youcook_DataLoader(
+    #     data=os.path.join(os.path.dirname(__file__), 'csv/validation_youcook.csv'),
+    #     num_clip=args.num_windows_test,
+    #     video_root=args.eval_video_root,
+    #     fps=args.fps,
+    #     num_frames=args.num_frames,
+    #     size=args.video_size,
+    #     crop_only=False,
+    #     center_crop=True,
+    # )
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-        test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset)
+        # test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset)
     else:
         train_sampler = None
-        test_sampler = None
+        # test_sampler = None
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -147,14 +147,14 @@ def main_worker(gpu, ngpus_per_node, args):
         pin_memory=args.pin_memory,
         sampler=train_sampler,
     )
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=args.batch_size_val,
-        shuffle=False,
-        drop_last=True,
-        num_workers=args.num_thread_reader,
-        sampler=test_sampler,
-    )
+    # test_loader = torch.utils.data.DataLoader(
+    #     test_dataset,
+    #     batch_size=args.batch_size_val,
+    #     shuffle=False,
+    #     drop_last=True,
+    #     num_workers=args.num_thread_reader,
+    #     sampler=test_sampler,
+    # )
 
     # define loss function (criterion) and optimizer
     criterion = MILNCELoss()
@@ -242,7 +242,7 @@ def TrainOneBatch(model, opt, scheduler, data, loss_fun, args):
         if args.distributed:
             video_embd = allgather(video_embd, args)
             text_embd = allgather(text_embd, args)
-        loss = loss_fun(video_embd, text_embd)
+        loss = loss_fun(text_embd, video_embd)
     loss.backward()
     opt.step()
     scheduler.step()
