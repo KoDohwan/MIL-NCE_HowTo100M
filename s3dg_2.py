@@ -274,19 +274,19 @@ class S3D(nn.Module):
       return input
    
     def forward(self, video, text, mode='all', mixed5c=False):
-      if mode == 'all':
+        if mode == 'all':
 
-          video_out = self.forward_video(video.view(-1, *video.shape[2:]))
-          text_out = self.text_module(text)
+            video_out = self.forward_video(video.view(-1, *video.shape[2:]))
+            text_out = self.text_module(text)
          
-          v = video_out.view(video_out.shape[0]//self.args.num_candidates, -1, video_out.shape[-1]).permute(1, 0, 2)
-          return video_out, self.MHA(text_out.unsqueeze(0), v, v)[0].squeeze(0)
-      elif mode == 'video':
-          return self.forward_video(video, mixed5c=mixed5c)
-      elif mode == 'text':
-          return self.text_module(text)
-      else:
-          raise NotImplementedError
+            v = video_out.view(video_out.shape[0]//self.args.num_candidates, -1, video_out.shape[-1]).permute(1, 0, 2)
+            return self.MHA(text_out.unsqueeze(0), v, v)[0].squeeze(0), text_out
+        elif mode == 'video':
+            return self.forward_video(video, mixed5c=mixed5c)
+        elif mode == 'text':
+            return self.text_module(text)
+        else:
+            raise NotImplementedError
 
     def forward_video(self, inputs, mixed5c=False):
       #out = {}

@@ -56,7 +56,7 @@ def main():
     # else:
     #     raise NotImplementedError
 
-    args.world_size = 1
+    args.world_size = 2
     args.rank = 0
     args.multiprocessing_distributed = True
     args.evaluate = False
