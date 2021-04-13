@@ -3,6 +3,7 @@ import random
 import time
 import glob
 from tqdm import tqdm
+import socket
 from sklearn import preprocessing
 from sklearn.svm import LinearSVC
 
@@ -17,9 +18,9 @@ import torch.multiprocessing as mp
 import torch.utils.data
 import torch.utils.data.distributed
 
-from s3dg_2 import S3D
+from s3dg_3 import S3D
 from args import get_args
-from video_loader_2 import HT100M_DataLoader
+from video_loader import HT100M_DataLoader
 from loss import MILNCELoss
 
 from metrics import compute_metrics
@@ -42,24 +43,15 @@ def main():
         random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-    # if args.world_size == -1 and "SLURM_NPROCS" in os.environ:
-    #     args.world_size = int(os.environ["SLURM_NPROCS"])
-    #     args.rank = int(os.environ["SLURM_PROCID"])
-    #     jobid = os.environ["SLURM_JOBID"]
-    #     hostfile = "dist_url." + jobid + ".txt"
-    #     args.dist_url = "file://{}.{}".format(os.path.realpath(args.dist_file), jobid)
-    #     print(
-    #         "dist-url:{} at PROCID {} / {}".format(
-    #             args.dist_url, args.rank, args.world_size
-    #         )
-    #     )
-    # else:
-    #     raise NotImplementedError
-
-    args.world_size = 2
+    args.world_size = 1
     args.rank = 0
     args.multiprocessing_distributed = True
     args.evaluate = False
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    this_ip = s.getsockname()[0]
+    s.close()
+    args.dist_url = f'tcp://{this_ip}:23456'
  
     args.distributed = args.world_size > 1 or args.multiprocessing_distributed
     ngpus_per_node = torch.cuda.device_count()
@@ -242,7 +234,7 @@ def TrainOneBatch(model, opt, scheduler, data, loss_fun, args):
         if args.distributed:
             video_embd = allgather(video_embd, args)
             text_embd = allgather(text_embd, args)
-        loss = loss_fun(text_embd, video_embd)
+        loss = loss_fun(video_embd, text_embd)
     loss.backward()
     opt.step()
     scheduler.step()
@@ -310,7 +302,7 @@ def get_last_checkpoint(checkpoint_dir):
         return ''
 
 def log(output, args):
-    with open(os.path.join(os.path.dirname(__file__), 'log' , args.checkpoint_dir + '.txt'), "a") as f:
+    with open(os.path.join(os.path.dirname(__file__), 'log' , args.checkpoint_dir + 'temp.txt'), "a") as f:
         f.write(output + '\n')
 
 if __name__ == "__main__":

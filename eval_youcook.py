@@ -8,23 +8,23 @@ import torch.utils.data
 from metrics import compute_metrics, print_computed_metrics
 from args import get_args
 from youcook_loader import Youcook_DataLoader
-import s3dg
+from s3dg_2 import S3D
 from tqdm import tqdm
 import numpy as np
 
 def main():
     args = get_args()
     assert args.eval_video_root != ''
-    checkpoint_path = args.pretrain_cnn_path
+    checkpoint_path = './checkpoint/epoch0345.pth.tar'
     print("=> loading checkpoint '{}'".format(checkpoint_path))
     checkpoint = torch.load(checkpoint_path)
     if "state_dict" in checkpoint:
-        model = s3dg.S3D(
+        model = S3D(
             args.num_class, space_to_depth=False, word2vec_path=args.word2vec_path)
         model = torch.nn.DataParallel(model)
         model.load_state_dict(checkpoint["state_dict"])
     else: # load pre-trained model from https://github.com/antoine77340/S3D_HowTo100M
-        model = s3dg.S3D(
+        model = S3D(
             args.num_class, space_to_depth=True, word2vec_path=args.word2vec_path)
         model = torch.nn.DataParallel(model)
         checkpoint_module = {'module.' + k:v for k,v in checkpoint.items()}

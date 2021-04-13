@@ -24,7 +24,7 @@ class HT100M_DataLoader(Dataset):
             crop_only=False,
             center_crop=True,
             benchmark=False,
-            token_to_word_path='../../../data/project/rw/HowTo100M/data/dict.npy',
+            token_to_word_path='../HowTo100M/data/dict.npy',
             max_words=20,
             num_candidates=1,
             random_left_right_flip=False,
@@ -133,8 +133,8 @@ class HT100M_DataLoader(Dataset):
         return start
 
     def _get_text(self, caption):
-        caption_json = open(caption, 'r').read()
-        cap = pd.DataFrame(json.loads(caption_json))
+        caption_json = open(caption, 'r')
+        cap = pd.DataFrame(json.load(caption_json))
         ind = random.randint(0, len(cap) - 1)
         if self.num_candidates == 1:
             words = self.words_to_ids(cap['text'].values[ind])

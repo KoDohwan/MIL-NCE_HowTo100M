@@ -24,7 +24,7 @@ class HT100M_DataLoader(Dataset):
             crop_only=False,
             center_crop=True,
             benchmark=False,
-            token_to_word_path='../../../data/project/rw/HowTo100M/data/dict.npy',
+            token_to_word_path='../HowTo100M/data/dict.npy',
             max_words=20,
             num_candidates=1,
             random_left_right_flip=False,

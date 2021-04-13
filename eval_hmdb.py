@@ -7,7 +7,7 @@ import torch.utils.data
 
 from args import get_args
 from hmdb_loader import HMDB_DataLoader
-from s3dg_2 import S3D
+from s3dg import S3D
 from tqdm import tqdm
 import numpy as np
 
@@ -18,7 +18,7 @@ from sklearn.svm import LinearSVC
 def main():
     args = get_args()
     assert args.eval_video_root != ''
-    checkpoint_path = args.pretrain_cnn_path
+    checkpoint_path = './checkpoint/s3d_howto100m.pth'
     print("=> loading checkpoint '{}'".format(checkpoint_path))
     checkpoint = torch.load(checkpoint_path)
     if "state_dict" in checkpoint:
