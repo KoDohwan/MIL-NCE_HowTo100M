@@ -1,9 +1,11 @@
+import warnings
+warnings.simplefilter("ignore", UserWarning)
 import os
 import random
 import time
 import glob
-from tqdm import tqdm
 import socket
+from tqdm import tqdm
 from sklearn import preprocessing
 from sklearn.svm import LinearSVC
 
@@ -43,15 +45,17 @@ def main():
         random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-    args.world_size = 1
-    args.rank = 0
-    args.multiprocessing_distributed = True
-    args.evaluate = False
+    ip_list = ['9.0.205.130', '9.0.208.130', '9.0.202.130', '9.0.226.130', '9.0.223.130', '9.0.216.130', '9.0.213.130', '9.0.222.130', '9.0.207.130', '9.0.206.130']
+    args.world_size = len(ip_list)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     this_ip = s.getsockname()[0]
     s.close()
-    args.dist_url = f'tcp://{this_ip}:23456'
+    for i, ip in enumerate(ip_list):
+        if ip == this_ip:
+            args.rank = i
+    args.multiprocessing_distributed = True
+    args.evaluate = False
  
     args.distributed = args.world_size > 1 or args.multiprocessing_distributed
     ngpus_per_node = torch.cuda.device_count()
@@ -62,8 +66,10 @@ def main():
         main_worker(args.gpu, ngpus_per_node, args)
 
 
+
 def main_worker(gpu, ngpus_per_node, args):
     args.gpu = gpu
+    
     if args.distributed:
         if args.multiprocessing_distributed:
             args.rank = args.rank * ngpus_per_node + gpu
@@ -74,9 +80,7 @@ def main_worker(gpu, ngpus_per_node, args):
             rank=args.rank,
         )
     # create model
-    model = S3D(
-        args.num_class, space_to_depth=False, word2vec_path=args.word2vec_path, init=args.weight_init,
-    )
+    model = S3D(args.num_class, space_to_depth=False, word2vec_path=args.word2vec_path, init=args.weight_init,)
 
     if args.pretrain_cnn_path:
         net_data = torch.load(args.pretrain_cnn_path)
@@ -112,23 +116,11 @@ def main_worker(gpu, ngpus_per_node, args):
         random_left_right_flip=args.random_flip,
         num_candidates=args.num_candidates,
     )
-    # Test data loading code
-    # test_dataset = Youcook_DataLoader(
-    #     data=os.path.join(os.path.dirname(__file__), 'csv/validation_youcook.csv'),
-    #     num_clip=args.num_windows_test,
-    #     video_root=args.eval_video_root,
-    #     fps=args.fps,
-    #     num_frames=args.num_frames,
-    #     size=args.video_size,
-    #     crop_only=False,
-    #     center_crop=True,
-    # )
+
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-        # test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset)
     else:
         train_sampler = None
-        # test_sampler = None
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -139,16 +131,7 @@ def main_worker(gpu, ngpus_per_node, args):
         pin_memory=args.pin_memory,
         sampler=train_sampler,
     )
-    # test_loader = torch.utils.data.DataLoader(
-    #     test_dataset,
-    #     batch_size=args.batch_size_val,
-    #     shuffle=False,
-    #     drop_last=True,
-    #     num_workers=args.num_thread_reader,
-    #     sampler=test_sampler,
-    # )
 
-    # define loss function (criterion) and optimizer
     criterion = MILNCELoss()
 
     if args.optimizer == 'adam':
@@ -162,7 +145,7 @@ def main_worker(gpu, ngpus_per_node, args):
         os.mkdir(checkpoint_dir)
     # optionally resume from a checkpoint
     if args.resume:
-        checkpoint_path = get_last_checkpoint(checkpoint_dir)
+        checkpoint_path = './checkpoint/checkpoint.pth.tar'
         if checkpoint_path:
             log("=> loading checkpoint '{}'".format(checkpoint_path), args)
             checkpoint = torch.load(checkpoint_path)
@@ -173,16 +156,17 @@ def main_worker(gpu, ngpus_per_node, args):
             log("=> loaded checkpoint '{}' (epoch {})".format(checkpoint_path, checkpoint["epoch"]), args)
         else:
             log("=> no checkpoint found at '{}'".format(args.resume), args)
+        # checkpoint_path = './checkpoint/s3d_howto100m.pth'
+        # checkpoint = torch.load(checkpoint_path)
+        # checkpoint_module = {'module.' + k:v for k,v in checkpoint.items()}
+        # model.load_state_dict(checkpoint_module)
+        # print('loaded')
 
     if args.cudnn_benchmark:
         cudnn.benchmark = True
     total_batch_size = args.world_size * args.batch_size 
-    log(
-        "Starting training loop for rank: {}, total batch size: {}".format(
-            args.rank, total_batch_size
-        ), args
-    )
-    for epoch in range(args.start_epoch, args.epochs):
+    log("Starting training loop for rank: {}, total batch size: {}".format(args.rank, total_batch_size), args)
+    for epoch in tqdm(range(args.start_epoch, args.epochs)):
         if args.distributed:
             train_sampler.set_epoch(epoch)
         if epoch % max(1, total_batch_size // 512) == 0 and args.evaluate:
@@ -302,7 +286,7 @@ def get_last_checkpoint(checkpoint_dir):
         return ''
 
 def log(output, args):
-    with open(os.path.join(os.path.dirname(__file__), 'log' , args.checkpoint_dir + 'temp.txt'), "a") as f:
+    with open(os.path.join(os.path.dirname(__file__), 'log' , args.checkpoint_dir + 'log.txt'), "a") as f:
         f.write(output + '\n')
 
 if __name__ == "__main__":

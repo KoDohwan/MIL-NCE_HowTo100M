@@ -18,7 +18,7 @@ from sklearn.svm import LinearSVC
 def main():
     args = get_args()
     assert args.eval_video_root != ''
-    checkpoint_path = './checkpoint/s3d_howto100m.pth'
+    checkpoint_path = './checkpoint/epoch0089.pth.tar'
     print("=> loading checkpoint '{}'".format(checkpoint_path))
     checkpoint = torch.load(checkpoint_path)
     if "state_dict" in checkpoint:

@@ -15,7 +15,7 @@ import numpy as np
 def main():
     args = get_args()
     assert args.eval_video_root != ''
-    checkpoint_path = './checkpoint/epoch0345.pth.tar'
+    checkpoint_path = './checkpoint/s3d_howto100m.pth'
     print("=> loading checkpoint '{}'".format(checkpoint_path))
     checkpoint = torch.load(checkpoint_path)
     if "state_dict" in checkpoint:
