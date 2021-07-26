@@ -14,7 +14,7 @@ def get_args(description='MILNCE'):
     parser.add_argument('--num_thread_reader', type=int, default=20, help='')
     parser.add_argument('--num_class', type=int, default=512, help='upper epoch limit')
     parser.add_argument('--num_candidates', type=int, default=5, help='num candidates for MILNCE loss')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=12, help='batch size')
     parser.add_argument('--num_windows_test', type=int, default=4, help='number of testing windows')
     parser.add_argument('--batch_size_val', type=int, default=32, help='batch size eval')
     parser.add_argument('--momemtum', type=float, default=0.9, help='SGD momemtum')

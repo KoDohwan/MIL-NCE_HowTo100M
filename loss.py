@@ -74,22 +74,6 @@ class SDTW_negative(th.nn.Module):
         self.sdtw = SoftDTW(use_cuda=True, gamma=1e-1, dist_func='cosine')
         self.device = self.args.rank
 
-    def _cosine_similarity(self, x, y):
-        n = x.size(1)
-        m = y.size(1)
-        d = x.size(2)
-        x = x.unsqueeze(2).expand(-1, n, m, d)
-        y = y.unsqueeze(1).expand(-1, n, m, d)
-        distance = th.nn.functional.cosine_similarity(x, y, dim=3)
-        return distance
-    
-    def _pairwise_cosine_similarity(self, x, y):
-        n = x.size(1)
-        m = y.size(1)
-        x = x.unsqueeze(2).expand(-1, n, m)
-        y = y.unsqueeze(1).expand(-1, n, m)
-        return th.abs(x - y)
-
     def forward(self, video_embd, text_embd):
         sdtw_loss = self.sdtw(video_embd, text_embd)
         pairwise = th.matmul(video_embd.view(-1, 512), text_embd.view(-1, 512).t())
@@ -105,7 +89,50 @@ class SDTW_negative(th.nn.Module):
 
         loss = th.mean(sdtw_loss + negative_loss / 159)
         return loss
-        
+
+class SDTW_3(th.nn.Module):
+    def __init__(self, args):
+        super(SDTW_3, self).__init__()
+        self.args = args
+        self.sdtw = SoftDTW(use_cuda=True, gamma=1e-1, dist_func='negative_dot')
+        self.device = self.args.rank
+
+    def video_video(self, video_embd):
+        b, n, d = video_embd.shape
+        pos = -self.sdtw(video_embd, video_embd)
+        video_embd_row = video_embd.unsqueeze(0).expand(b, b, n ,d).reshape(-1, n ,d)
+        video_embd_col = video_embd.unsqueeze(1).expand(b, b, n ,d).reshape(-1, n, d)
+        neg = -self.sdtw(video_embd_row, video_embd_col).reshape(b, b)
+        neg = th.logsumexp(neg, 1)
+        loss = th.mean(neg - pos)
+        return loss
+
+    def video_text(self, video_embd, text_embd):
+        b, n, d = video_embd.shape
+        pos = -self.sdtw(video_embd, text_embd)
+        video_embd_row = video_embd.unsqueeze(0).expand(b, b, n ,d).reshape(-1, n ,d)
+        text_embd_col = text_embd.unsqueeze(1).expand(b, b, n ,d).reshape(-1, n, d)
+        neg = -self.sdtw(video_embd_row, text_embd_col).reshape(b, b)
+        neg = th.logsumexp(neg, 1)
+        loss = th.mean(neg - pos)
+        return loss
+
+    def text_text(self, text_embd):
+        b, n, d = text_embd.shape
+        pos = -self.sdtw(text_embd, text_embd)
+        text_embd_row = text_embd.unsqueeze(0).expand(b, b, n ,d).reshape(-1, n ,d)
+        text_embd_col = text_embd.unsqueeze(1).expand(b, b, n ,d).reshape(-1, n, d)
+        neg = -self.sdtw(text_embd_row, text_embd_col).reshape(b, b)
+        neg = th.logsumexp(neg, 1)
+        loss = th.mean(neg - pos)
+        return loss
+
+    def forward(self, video_embd, text_embd):
+        loss1 = self.video_video(video_embd)
+        loss2 = self.video_text(video_embd, text_embd)
+        loss3 = self.text_text(text_embd)
+        return loss1, loss2, loss3
+       
 # class CIDM(th.nn.Module):
 #     def __init__(self, args):
 #         super(CIDM, self).__init__()
